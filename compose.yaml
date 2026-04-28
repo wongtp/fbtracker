@@ -6,4 +6,37 @@ services:
       - 'POSTGRES_PASSWORD=secret'
       - 'POSTGRES_USER=myuser'
     ports:
-      - '5432'
+      - 5432:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+  influxdb2:
+    container_name: influxdb2
+    image: influxdb:2
+    ports:
+      - 8086:8086
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME:  admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: password
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: token
+      DOCKER_INFLUXDB_INIT_ORG: fbtracker
+      DOCKER_INFLUXDB_INIT_BUCKET: health
+    volumes:
+      - type: volume
+        source: influxdb2-data
+        target: /var/lib/influxdb2
+      - type: volume
+        source: influxdb2-config
+        target: /etc/influxdb2
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - 3000:3000
+    volumes:
+      - grafana-storage:/var/lib/grafana
+volumes:
+  influxdb2-data:
+  influxdb2-config:
+  grafana-storage:
+  postgres-data:
