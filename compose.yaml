@@ -9,6 +9,8 @@ services:
       - 5432:5432
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - fbtracker-net
   influxdb2:
     container_name: influxdb2
     image: influxdb:2
@@ -28,6 +30,8 @@ services:
       - type: volume
         source: influxdb2-config
         target: /etc/influxdb2
+    networks:
+      - fbtracker-net
   grafana:
     image: grafana/grafana
     container_name: grafana
@@ -35,6 +39,10 @@ services:
       - 3000:3000
     volumes:
       - grafana-storage:/var/lib/grafana
+    networks:
+      - fbtracker-net
+networks:
+  fbtracker-net:
 volumes:
   influxdb2-data:
   influxdb2-config:
