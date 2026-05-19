@@ -41,7 +41,7 @@ public class FitbitApiClient {
                 .header("Authorization", "Bearer " + accessToken)
                 .retrieve()
                 .body(Map.class);
-        } catch (HttpClientErrorException e) {
+        } catch (Exception e) {
             try {
                 refreshService.refreshToken();
                 return fetchData(endpoint);
