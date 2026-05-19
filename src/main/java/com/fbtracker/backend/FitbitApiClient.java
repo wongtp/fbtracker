@@ -32,22 +32,25 @@ public class FitbitApiClient {
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("No OAuth token found after refresh"));
         }
+        
+        return doFetch(endpoint, token.getAccessToken(), true);
+    }
 
-        String accessToken = token.getAccessToken();
-
+    private Map<String, Object> doFetch(String endpoint, String accessToken, boolean canRetry) {
         try {
             return fitbitRestClient.get()
                 .uri(endpoint)
                 .header("Authorization", "Bearer " + accessToken)
                 .retrieve()
                 .body(Map.class);
-        } catch (Exception e) {
-            try {
-                refreshService.refreshToken();
-                return fetchData(endpoint);
-            } catch (Exception refreshEx) {
-                throw new RuntimeException("Token refresh failed: " + refreshEx.getMessage());
-            }
+        } catch (HttpClientErrorException.Unauthorized e) {
+            if (!canRetry) throw e;
+            refreshService.refreshToken();
+            String newToken = tokenRepository.findAll().stream()
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("No OAuth token after refresh"))
+                .getAccessToken();
+            return doFetch(endpoint, newToken, false);
         }
 
     }
