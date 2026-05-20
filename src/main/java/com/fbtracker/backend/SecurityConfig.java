@@ -40,6 +40,7 @@ public class SecurityConfig {
                     oauthToken.setRefreshToken(client.getRefreshToken().getTokenValue());
                     oauthToken.setExpiresAt(client.getAccessToken().getExpiresAt());
 
+                    oauthTokenRepository.deleteAll();
                     oauthTokenRepository.save(oauthToken);
                     response.sendRedirect("/");
                 })

@@ -2,14 +2,16 @@ package com.fbtracker.backend;
 
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 @Service
 public class TokenRefreshService {
+    private static final Logger log = LoggerFactory.getLogger(TokenRefreshService.class);
     private final RestClient fitbitRestClient;
     private final FitbitProperties fitbitProperties;
     private final OAuthTokenRepository tokenRepository;
@@ -21,8 +23,10 @@ public class TokenRefreshService {
     }
 
     public void refreshToken() {
-        OAuthToken token = tokenRepository.findAll().stream().max(Comparator.comparing(OAuthToken::getExpiresAt)).orElseThrow(() -> new RuntimeException("No valid OAuth token found"));
-        
+        log.info("Refreshing Fitbit access token");
+        OAuthToken token = tokenRepository.findTopByOrderByExpiresAtDesc()
+            .orElseThrow(() -> new RuntimeException("No valid OAuth token found"));
+
         String credentials = Base64.getEncoder().encodeToString(
             (fitbitProperties.getClientId() + ":" + fitbitProperties.getClientSecret()).getBytes()
         );
@@ -39,6 +43,7 @@ public class TokenRefreshService {
         token.setRefreshToken((String) response.get("refresh_token"));
         token.setExpiresAt(Instant.now().plusSeconds(((Number) response.get("expires_in")).longValue()));
         tokenRepository.save(token);
+        log.info("Token refresh succeeded, new expiry: {}", token.getExpiresAt());
     }
 
 }

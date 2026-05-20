@@ -3,7 +3,7 @@ package com.fbtracker.backend;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -34,15 +34,20 @@ public class SyncService {
         try {
             var data = fitbitApiClient.fetchData("/1/user/-/activities/" + activity + "/date/today/1d/1min.json");
             var resultsIntraday = (Map<String, Object>) data.get("activities-" + activity+"-intraday");
-            if (resultsIntraday != null){
-                var dataList = (List<Map<String, Object>>) resultsIntraday.get("dataset");
-                if (dataList != null && !dataList.isEmpty()) {
-                    for (Map<String, Object> entry : dataList) {
-                        double count = ((Number) entry.get("value")).doubleValue();
-                        Instant timestamp = LocalDate.now().atTime(LocalTime.parse(entry.get("time").toString())).toInstant(ZoneOffset.UTC);
-                        influxWriteService.writeData(activity+"_intraday", Map.of("source", "fitbit"), "count", count, timestamp);
-                    }
-                }
+            if (resultsIntraday == null) {
+                log.warn("No 'activities-{}-intraday' field in response. Response keys: {}", activity, data.keySet());
+                return;
+            }
+            var dataList = (List<Map<String, Object>>) resultsIntraday.get("dataset");
+            if (dataList == null || dataList.isEmpty()) {
+                log.warn("Empty intraday dataset for {}", activity);
+                return;
+            }
+            log.info("Writing {} intraday datapoints for {}", dataList.size(), activity);
+            for (Map<String, Object> entry : dataList) {
+                double count = ((Number) entry.get("value")).doubleValue();
+                Instant timestamp = LocalDate.now().atTime(LocalTime.parse(entry.get("time").toString())).atZone(ZoneId.systemDefault()).toInstant();
+                influxWriteService.writeData(activity+"_intraday", Map.of("source", "fitbit"), "count", count, timestamp);
             }
         } catch (Exception e) {
             log.error("Sync failed for {}: {}", activity, e.getMessage());
@@ -63,12 +68,17 @@ public class SyncService {
             }
 
             var heartIntraday = (Map<String, Object>) data.get("activities-heart-intraday");
-            if (heartIntraday != null){
+            if (heartIntraday == null) {
+                log.warn("No 'activities-heart-intraday' field in response. Response keys: {}", data.keySet());
+            } else {
                 var heartData = (List<Map<String, Object>>) heartIntraday.get("dataset");
-                if (heartData != null && !heartData.isEmpty()) {
+                if (heartData == null || heartData.isEmpty()) {
+                    log.warn("Empty intraday dataset for heartrate");
+                } else {
+                    log.info("Writing {} intraday datapoints for heartrate", heartData.size());
                     for (Map<String, Object> entry : heartData) {
                         double bpm = ((Number) entry.get("value")).doubleValue();
-                        Instant timestamp = LocalDate.now().atTime(LocalTime.parse(entry.get("time").toString())).toInstant(ZoneOffset.UTC);
+                        Instant timestamp = LocalDate.now().atTime(LocalTime.parse(entry.get("time").toString())).atZone(ZoneId.systemDefault()).toInstant();
                         influxWriteService.writeData("heartrate_intraday", Map.of("source", "fitbit"), "bpm", bpm, timestamp);
                     }
                 }
