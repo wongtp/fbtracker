@@ -38,6 +38,9 @@ class FitbitApiClientTest {
     @Mock
     private TokenRefreshService refreshService;
 
+    @Mock
+    private DiscordNotificationService discordService;
+
     @InjectMocks
     private FitbitApiClient fitbitApiClient;
 

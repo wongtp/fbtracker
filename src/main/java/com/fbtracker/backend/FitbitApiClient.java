@@ -12,14 +12,25 @@ import org.springframework.web.client.RestClient;
 @Service
 public class FitbitApiClient {
     private static final Logger log = LoggerFactory.getLogger(FitbitApiClient.class);
+    private static final String REFRESH_FAILURE_MESSAGE =
+        "Fitbit token refresh failed. Re-login required at http://localhost:8080/oauth2/authorization/fitbit";
+
     private final RestClient fitbitRestClient;
     private final OAuthTokenRepository tokenRepository;
     private final TokenRefreshService refreshService;
+    private final DiscordNotificationService discordService;
 
-    public FitbitApiClient(RestClient fitbitRestClient, OAuthTokenRepository tokenRepository, TokenRefreshService refreshService) {
+    public FitbitApiClient(RestClient fitbitRestClient, OAuthTokenRepository tokenRepository,
+                           TokenRefreshService refreshService, DiscordNotificationService discordService) {
         this.fitbitRestClient = fitbitRestClient;
         this.tokenRepository = tokenRepository;
         this.refreshService = refreshService;
+        this.discordService = discordService;
+    }
+
+    private void notifyRefreshFailure() {
+        log.error("Token refresh failed — likely refresh token expired. Re-login required at /oauth2/authorization/fitbit");
+        discordService.sendMessage(REFRESH_FAILURE_MESSAGE);
     }
 
     @SuppressWarnings("unchecked")
@@ -32,7 +43,7 @@ public class FitbitApiClient {
             try {
                 refreshService.refreshToken();
             } catch (Exception refreshEx) {
-                log.error("Token refresh failed — likely refresh token expired. Re-login required at /oauth2/authorization/fitbit");
+                notifyRefreshFailure();
                 throw refreshEx;
             }
             token = tokenRepository.findTopByOrderByExpiresAtDesc()
@@ -54,7 +65,7 @@ public class FitbitApiClient {
             try {
                 refreshService.refreshToken();
             } catch (Exception refreshEx) {
-                log.error("Token refresh failed — likely refresh token expired. Re-login required at /oauth2/authorization/fitbit");
+                notifyRefreshFailure();
                 throw refreshEx;
             }
             String newToken = tokenRepository.findTopByOrderByExpiresAtDesc()
