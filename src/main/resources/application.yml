@@ -1,0 +1,58 @@
+app:
+    timezone: ${TZ:America/New_York}
+
+influx:
+    url: http://localhost:8086/
+    token: ${INFLUX_TOKEN}
+    org: fbtracker
+    bucket: health
+
+spring:
+    application:
+        name: backend
+    config:
+        import: optional:file:.env[.properties]
+    datasource:
+        url: jdbc:postgresql://localhost:5432/mydatabase
+        username: myuser
+        password: ${POSTGRES_PASSWORD}
+    security:
+        oauth2:
+            client:
+                registration:
+                    fitbit:
+                        client-id: ${FITBIT_CLIENT_ID}
+                        client-secret: ${FITBIT_CLIENT_SECRET}
+                        redirect-uri: http://localhost:8080/callback
+                        scope: activity,heartrate,location,nutrition,oxygen_saturation,respiratory_rate,profile,settings,sleep,social,weight
+                        authorization-grant-type: authorization_code
+                        client-authentication-method: client_secret_basic
+                provider:
+                    fitbit:
+                        authorization-uri: https://www.fitbit.com/oauth2/authorize
+                        token-uri: https://api.fitbit.com/oauth2/token
+                        user-info-uri: https://api.fitbit.com/1/user/-/profile.json
+                        user-name-attribute: user
+    docker:
+        compose:
+            enabled: false
+    jpa:
+        hibernate:
+            ddl-auto: update
+
+logging:
+    level:
+        org.springframework.security: DEBUG
+
+management:
+    influx:
+        metrics:
+            export:
+                enabled: false
+
+fitbit:
+    client-id: ${FITBIT_CLIENT_ID}
+    client-secret: ${FITBIT_CLIENT_SECRET}
+
+discord:
+    webhook-url: ${DISCORD_WEBHOOK_URL:}

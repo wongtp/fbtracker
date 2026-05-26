@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.influxdb.client.InfluxDBClient;
@@ -12,14 +13,16 @@ import com.influxdb.query.FluxTable;
 @Service
 public class InfluxQueryService {
     private static final Logger log = LoggerFactory.getLogger(InfluxQueryService.class);
-    private static final String TIMEZONE = "America/New_York";
 
     private final InfluxDBClient influxDBClient;
     private final InfluxProperties influxProperties;
+    private final String timezone;
 
-    public InfluxQueryService(InfluxDBClient influxDBClient, InfluxProperties influxProperties) {
+    public InfluxQueryService(InfluxDBClient influxDBClient, InfluxProperties influxProperties,
+                              @Value("${app.timezone}") String timezone) {
         this.influxDBClient = influxDBClient;
         this.influxProperties = influxProperties;
+        this.timezone = timezone;
     }
 
     public double getDailyTotal(String measurement) {
@@ -31,7 +34,7 @@ public class InfluxQueryService {
               |> range(start: today(), stop: now())
               |> filter(fn: (r) => r._measurement == "%s")
               |> sum()
-            """, TIMEZONE, influxProperties.getBucket(), measurement);
+            """, timezone, influxProperties.getBucket(), measurement);
 
         return runScalarQuery(flux, measurement);
     }
@@ -46,7 +49,7 @@ public class InfluxQueryService {
               |> filter(fn: (r) => r._measurement == "%s")
               |> filter(fn: (r) => r._field == "%s")
               |> last()
-            """, TIMEZONE, influxProperties.getBucket(), measurement, field);
+            """, timezone, influxProperties.getBucket(), measurement, field);
 
         return runScalarQuery(flux, measurement + "." + field);
     }

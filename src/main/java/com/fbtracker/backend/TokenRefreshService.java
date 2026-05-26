@@ -22,11 +22,17 @@ public class TokenRefreshService {
         this.fitbitRestClient = fitbitRestClient;
     }
 
-    public void refreshToken() {
-        log.info("Refreshing Fitbit access token");
+    public synchronized void refreshToken() {
         OAuthToken token = tokenRepository.findTopByOrderByExpiresAtDesc()
             .orElseThrow(() -> new RuntimeException("No valid OAuth token found"));
 
+        // another caller may have already refreshed while we waited on the lock
+        if (token.getExpiresAt().isAfter(Instant.now().plusSeconds(60))) {
+            log.debug("Token already fresh (expires at {}), skipping refresh", token.getExpiresAt());
+            return;
+        }
+
+        log.info("Refreshing Fitbit access token");
         String credentials = Base64.getEncoder().encodeToString(
             (fitbitProperties.getClientId() + ":" + fitbitProperties.getClientSecret()).getBytes()
         );

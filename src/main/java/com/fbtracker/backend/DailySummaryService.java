@@ -17,7 +17,7 @@ public class DailySummaryService {
         this.discordService = discordService;
     }
 
-    @Scheduled(cron = "0 0 22 * * *", zone = "America/New_York")
+    @Scheduled(cron = "0 0 22 * * *", zone = "${app.timezone}")
     public void sendDailySummary() {
         try {
             double steps = queryService.getDailyTotal("steps_intraday");

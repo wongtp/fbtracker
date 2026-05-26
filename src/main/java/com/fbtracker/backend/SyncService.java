@@ -9,6 +9,7 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -17,13 +18,16 @@ public class SyncService {
     private static final Logger log = LoggerFactory.getLogger(SyncService.class);
     private final FitbitApiClient fitbitApiClient;
     private final InfluxWriteService influxWriteService;
+    private final ZoneId zoneId;
 
-    public SyncService(FitbitApiClient fitbitApiClient, InfluxWriteService influxWriteService){
+    public SyncService(FitbitApiClient fitbitApiClient, InfluxWriteService influxWriteService,
+                       @Value("${app.timezone}") String timezone){
         this.fitbitApiClient = fitbitApiClient;
         this.influxWriteService = influxWriteService;
+        this.zoneId = ZoneId.of(timezone);
     }
 
-    @Scheduled(cron = "0 0 * * * *")
+    @Scheduled(cron = "0 0 * * * *", zone = "${app.timezone}")
     public void syncActivities() {
         activityHelper("steps");
         activityHelper("calories");
@@ -46,7 +50,7 @@ public class SyncService {
             log.info("Writing {} intraday datapoints for {}", dataList.size(), activity);
             for (Map<String, Object> entry : dataList) {
                 double count = ((Number) entry.get("value")).doubleValue();
-                Instant timestamp = LocalDate.now().atTime(LocalTime.parse(entry.get("time").toString())).atZone(ZoneId.systemDefault()).toInstant();
+                Instant timestamp = LocalDate.now(zoneId).atTime(LocalTime.parse(entry.get("time").toString())).atZone(zoneId).toInstant();
                 influxWriteService.writeData(activity+"_intraday", Map.of("source", "fitbit"), "count", count, timestamp);
             }
         } catch (Exception e) {
@@ -54,7 +58,7 @@ public class SyncService {
         }
     }
 
-    @Scheduled(cron = "0 0 * * * *")
+    @Scheduled(cron = "0 0 * * * *", zone = "${app.timezone}")
     public void syncHeartrate() {
         try {
             var data = fitbitApiClient.fetchData("/1/user/-/activities/heart/date/today/1d/1min.json");
@@ -78,7 +82,7 @@ public class SyncService {
                     log.info("Writing {} intraday datapoints for heartrate", heartData.size());
                     for (Map<String, Object> entry : heartData) {
                         double bpm = ((Number) entry.get("value")).doubleValue();
-                        Instant timestamp = LocalDate.now().atTime(LocalTime.parse(entry.get("time").toString())).atZone(ZoneId.systemDefault()).toInstant();
+                        Instant timestamp = LocalDate.now(zoneId).atTime(LocalTime.parse(entry.get("time").toString())).atZone(zoneId).toInstant();
                         influxWriteService.writeData("heartrate_intraday", Map.of("source", "fitbit"), "bpm", bpm, timestamp);
                     }
                 }
@@ -88,7 +92,7 @@ public class SyncService {
         }
     }
 
-    @Scheduled(cron = "0 0 * * * *")
+    @Scheduled(cron = "0 0 * * * *", zone = "${app.timezone}")
     public void syncOxygen() {
         try {
             var data = fitbitApiClient.fetchData("/1/user/-/spo2/date/today.json");
@@ -101,7 +105,8 @@ public class SyncService {
         }
     }
 
-    @Scheduled(cron = "0 0 * * * *")
+    @Scheduled(cron = "0 0 10 * * *", zone = "${app.timezone}")
+    @Scheduled(cron = "0 0 13 * * *", zone = "${app.timezone}")
     public void syncSleep() {
         try {
             var data = fitbitApiClient.fetchData("/1/user/-/sleep/date/today.json");

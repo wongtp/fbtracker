@@ -14,9 +14,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -29,8 +29,12 @@ class SyncServiceTest {
     @Mock
     private InfluxWriteService influxWriteService;
 
-    @InjectMocks
     private SyncService syncService;
+
+    @BeforeEach
+    void setUp() {
+        syncService = new SyncService(fitbitApiClient, influxWriteService, "America/New_York");
+    }
 
     private Map<String, Object> intradayResponse(String metric) {
         return Map.of(

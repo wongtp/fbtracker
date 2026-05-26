@@ -1,6 +1,7 @@
 services:
   postgres:
     image: 'postgres:16'
+    restart: unless-stopped
     environment:
       - 'POSTGRES_DB=mydatabase'
       - 'POSTGRES_PASSWORD=${POSTGRES_PASSWORD}'
@@ -14,6 +15,7 @@ services:
   influxdb2:
     container_name: influxdb2
     image: influxdb:2
+    restart: unless-stopped
     ports:
       - 8086:8086
     environment:
@@ -35,10 +37,28 @@ services:
   grafana:
     image: grafana/grafana
     container_name: grafana
+    restart: unless-stopped
     ports:
       - 3000:3000
     volumes:
       - grafana-storage:/var/lib/grafana
+    networks:
+      - fbtracker-net
+  backend:
+    build: .
+    container_name: backend
+    restart: unless-stopped
+    ports:
+      - 8080:8080
+    env_file:
+      - .env
+    environment:
+      INFLUX_URL: http://influxdb2:8086/
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/mydatabase
+      TZ: America/New_York
+    depends_on:
+      - postgres
+      - influxdb2
     networks:
       - fbtracker-net
 networks:
