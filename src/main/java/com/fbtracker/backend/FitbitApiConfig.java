@@ -10,4 +10,9 @@ public class FitbitApiConfig {
     public RestClient fitbitRestClient() {
         return RestClient.create("https://api.fitbit.com");
     }
+
+    @Bean
+    public RestClient.Builder restClientBuilder() {
+        return RestClient.builder();
+    }
 }
