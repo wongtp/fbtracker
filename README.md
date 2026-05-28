@@ -8,10 +8,12 @@ A self-hosted Fitbit health analytics service. Syncs your Fitbit data hourly to 
 
 - Pulls **intraday (per-minute) data** for steps, calories, distance, and heart rate from the Fitbit Web API
 - Pulls **daily summaries** for sleep stages, SpO2, and resting heart rate
-- Persists OAuth tokens in PostgreSQL with automatic refresh-token rotation
-- Writes time-series data to InfluxDB 2 with timezone-aware timestamps
+- Persists OAuth tokens in PostgreSQL with synchronized refresh-token rotation
+- Writes time-series data to InfluxDB 2 with configurable, timezone-aware timestamps
 - Visualizes everything through Grafana with Flux queries (cumulative daily progress, multi-day trends, etc.)
-- Runs as a containerized Spring Boot service with all dependencies via Docker Compose
+- Sends **daily summaries and token-refresh failure alerts** to Discord
+- **Backfills historical Fitbit data** from a chosen date range, paced under Fitbit's rate limit, with a web UI to trigger and monitor jobs
+- Runs entirely in Docker Compose — Spring Boot service, Postgres, InfluxDB, Grafana, all one command
 
 ## Tech stack
 
@@ -56,11 +58,12 @@ Why two databases? OAuth tokens are tiny relational records (rotate frequently, 
 ### Prerequisites
 
 - Docker + Docker Compose
-- Java 21 (the included Maven wrapper handles Maven itself)
 - A registered [Fitbit Developer application](https://dev.fitbit.com/apps/new) with:
   - Application type: **Personal** (required for intraday data)
   - OAuth 2.0 Application Type: **Server**
   - Callback URL: `http://localhost:8080/callback`
+
+Java 21 is only needed if you want to run the backend outside Docker (e.g. `./mvnw spring-boot:run` for local development).
 
 ### 1. Clone
 
@@ -78,29 +81,34 @@ FITBIT_CLIENT_ID=your-client-id
 FITBIT_CLIENT_SECRET=your-client-secret
 INFLUX_TOKEN=any-token-you-want
 POSTGRES_PASSWORD=any-password
+DISCORD_WEBHOOK_URL=optional-discord-webhook-url
 ```
 
-### 3. Start the infra containers
+Optionally override the timezone for cron schedules and timestamp parsing (defaults to `America/New_York`):
+
+```env
+TZ=America/Los_Angeles
+```
+
+### 3. Start everything
 
 ```bash
 docker compose up -d
 ```
 
-This brings up PostgreSQL (port 5432), InfluxDB (port 8086), and Grafana (port 3000).
+This brings up the backend (port 8080), PostgreSQL (5432), InfluxDB (8086), and Grafana (3000). All services have `restart: unless-stopped`, so they come back automatically after a Docker Desktop or host restart.
 
-### 4. Run the app
-
-```bash
-./mvnw spring-boot:run
-```
-
-### 5. Authorize with Fitbit
+### 4. Authorize with Fitbit
 
 Open http://localhost:8080/oauth2/authorization/fitbit, log in to Fitbit, and authorize the app. You'll be redirected back to localhost — that's the OAuth callback storing your access token in Postgres.
 
-### 6. Wait or trigger a sync
+### 5. Wait or trigger a sync
 
-Syncs run hourly on the cron schedule. To verify it's working, watch the logs for sync completion messages, or jump straight to Grafana.
+Syncs run hourly on a staggered cron schedule. To verify it's working, watch the logs for sync completion messages, or jump straight to Grafana.
+
+### 6. Backfill historical data (optional)
+
+Open http://localhost:8080/admin/index.html, pick a start and end date, and click **Start backfill**. The job runs asynchronously with rate-limit pacing (~2.5 min per day to stay under Fitbit's 150 req/hour limit), persists progress to Postgres, and auto-resumes if the container restarts mid-run. Days with no real activity are detected and skipped.
 
 ### 7. Set up Grafana
 
@@ -126,7 +134,7 @@ Syncs run hourly on the cron schedule. To verify it's working, watch the logs fo
 
 ## Sample queries
 
-**Today's cumulative step count** (since midnight in EST/EDT):
+**Today's cumulative step count** (since midnight, scoped to today):
 
 ```flux
 import "timezone"
@@ -139,7 +147,7 @@ from(bucket: "health")
   |> cumulativeSum(columns: ["_value"])
 ```
 
-**Daily step totals over time** (bar chart):
+**Daily step totals over time** (bar chart — use `v.timeRangeStart` / `v.timeRangeStop` so Grafana's time picker controls the range, otherwise historical data won't show up):
 
 ```flux
 from(bucket: "health")
@@ -153,20 +161,18 @@ from(bucket: "health")
 
 Personal learning project. What's done:
 
-- Hourly sync of all listed metrics
-- OAuth flow with automatic token refresh
-- Postgres + InfluxDB containerized
+- Hourly sync of all listed metrics, staggered across the hour to avoid Fitbit's per-client load-balancer throttling
+- Sleep sync runs twice daily (10am and 1pm ET) instead of hourly, so sleep data isn't written 24 times per day
+- OAuth flow with synchronized token refresh — multiple concurrent syncs can't race and burn refresh tokens
+- Automatic retry-once on transient Fitbit 5xx errors, plus refresh-and-retry on 401
+- Configurable timezone via single `TZ` env var (cron schedules, timestamp parsing, and Flux queries all use it)
+- Fully containerized — Spring Boot service + Postgres + InfluxDB + Grafana, all with `restart: unless-stopped`
 - Grafana dashboards with intraday + daily aggregations
-- Unit tests covering token refresh, 401 retry, and sync failure isolation
+- Discord notifications for daily summaries and token-refresh failures
+- Historical backfill with a web admin UI (`/admin/index.html`): pick a date range, watch live progress, see errors. Async, rate-limit-paced, auto-resumes on container restart, idempotent on re-runs
+- Pre-device-activation days (all-zero data from Fitbit) are detected and skipped
+- Unit tests cover sync failure isolation, token refresh, 401 retry, 5xx retry, and Discord behavior
 - CI via GitHub Actions
-
-Roadmap:
-
-- [ ] Historical backfill (years of past Fitbit data)
-- [ ] Discord webhook for alerts (sync failures, daily summary, milestones)
-- [ ] Deploy to home Mac mini for 24/7 operation
-- [ ] Active zone minutes + HRV tracking
-- [ ] Integration tests with Testcontainers (real Postgres in test runs)
 
 ## License
 
