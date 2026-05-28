@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>fbtracker admin</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+        h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+        .sub { color: #666; margin-bottom: 2rem; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; }
+        .card h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+        form { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
+        label { display: flex; flex-direction: column; font-size: 0.85rem; color: #555; }
+        input[type=date] { font: inherit; padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; margin-top: 0.25rem; }
+        button { font: inherit; padding: 0.5rem 1rem; background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #aaa; cursor: not-allowed; }
+        .msg { margin-top: 0.75rem; padding: 0.6rem 0.8rem; border-radius: 4px; font-size: 0.9rem; }
+        .msg.ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+        .msg.err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eee; vertical-align: top; }
+        th { font-weight: 600; color: #555; background: #fafafa; }
+        .status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+        .status.RUNNING { background: #dbeafe; color: #1e3a8a; }
+        .status.COMPLETED { background: #d1fae5; color: #065f46; }
+        .status.FAILED { background: #fee2e2; color: #991b1b; }
+        .status.PENDING { background: #f3f4f6; color: #4b5563; }
+        .progress-bar { background: #eee; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+        .progress-fill { background: #2563eb; height: 100%; transition: width 0.3s; }
+        .id { font-family: ui-monospace, monospace; font-size: 0.75rem; color: #888; }
+        .err-msg { color: #991b1b; font-size: 0.8rem; max-width: 320px; word-break: break-word; }
+        .muted { color: #888; }
+    </style>
+</head>
+<body>
+    <h1>fbtracker admin</h1>
+    <div class="sub">Trigger and monitor historical data backfills.</div>
+
+    <div class="card">
+        <h2>New backfill</h2>
+        <form id="backfill-form">
+            <label>Start date<input type="date" name="start" required></label>
+            <label>End date<input type="date" name="end" required></label>
+            <button type="submit" id="submit-btn">Start backfill</button>
+        </form>
+        <div id="form-msg"></div>
+    </div>
+
+    <div class="card">
+        <h2>Jobs <span class="muted" id="last-refresh"></span></h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Created</th>
+                    <th>Range</th>
+                    <th>Progress</th>
+                    <th>Status</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody id="jobs-body">
+                <tr><td colspan="5" class="muted">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const form = document.getElementById('backfill-form');
+        const formMsg = document.getElementById('form-msg');
+        const submitBtn = document.getElementById('submit-btn');
+        const jobsBody = document.getElementById('jobs-body');
+        const lastRefresh = document.getElementById('last-refresh');
+
+        const today = new Date().toISOString().slice(0, 10);
+        const yearAgo = new Date(Date.now() - 365 * 86400 * 1000).toISOString().slice(0, 10);
+        form.elements.start.value = yearAgo;
+        form.elements.end.value = today;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const start = form.elements.start.value;
+            const end = form.elements.end.value;
+            submitBtn.disabled = true;
+            formMsg.innerHTML = '';
+            try {
+                const res = await fetch(`/admin/backfill?start=${start}&end=${end}`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                if (res.ok) {
+                    const job = await res.json();
+                    formMsg.innerHTML = `<div class="msg ok">Job <span class="id">${job.id}</span> started.</div>`;
+                    refreshJobs();
+                } else {
+                    const text = await res.text();
+                    formMsg.innerHTML = `<div class="msg err">${escapeHtml(text || `HTTP ${res.status}`)}</div>`;
+                }
+            } catch (err) {
+                formMsg.innerHTML = `<div class="msg err">${escapeHtml(String(err))}</div>`;
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+
+        function fmtTs(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return d.toLocaleString();
+        }
+
+        function daysBetween(a, b) {
+            return Math.round((new Date(b) - new Date(a)) / 86400000);
+        }
+
+        function progressCell(job) {
+            const total = daysBetween(job.startDate, job.endDate) + 1;
+            const done = Math.max(0, daysBetween(job.startDate, job.currentDate));
+            const clamped = Math.min(done, total);
+            const pct = total > 0 ? Math.round(100 * clamped / total) : 0;
+            return `
+                <div>${clamped} / ${total} days (${pct}%)</div>
+                <div class="progress-bar"><div class="progress-fill" style="width: ${pct}%"></div></div>
+                <div class="muted" style="font-size: 0.75rem; margin-top: 4px;">currentDate: ${job.currentDate}</div>
+            `;
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        }
+
+        function renderJobs(jobs) {
+            if (!jobs.length) {
+                jobsBody.innerHTML = '<tr><td colspan="5" class="muted">No backfill jobs yet.</td></tr>';
+                return;
+            }
+            jobsBody.innerHTML = jobs.map(j => `
+                <tr>
+                    <td>${fmtTs(j.createdAt)}<div class="id">${j.id.slice(0, 8)}…</div></td>
+                    <td>${j.startDate} → ${j.endDate}</td>
+                    <td>${progressCell(j)}</td>
+                    <td><span class="status ${j.status}">${j.status}</span></td>
+                    <td class="err-msg">${j.errorMessage ? escapeHtml(j.errorMessage) : ''}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function refreshJobs() {
+            try {
+                const res = await fetch('/admin/backfill', { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const jobs = await res.json();
+                renderJobs(jobs);
+                lastRefresh.textContent = `(refreshed ${new Date().toLocaleTimeString()})`;
+            } catch (err) {
+                lastRefresh.textContent = `(refresh failed: ${err.message})`;
+            }
+        }
+
+        refreshJobs();
+        setInterval(refreshJobs, 3000);
+    </script>
+</body>
+</html>

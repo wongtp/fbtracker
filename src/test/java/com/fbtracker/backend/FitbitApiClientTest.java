@@ -163,8 +163,33 @@ class FitbitApiClientTest {
     }
 
     @Test
-    void fetchData_propagates_whenNon401ErrorReceived() {
+    void fetchData_retriesOnce_when5xxReceived() {
         // Arrange
+        Map<String, Object> expectedResponse = Map.of("activities-steps", "fake data");
+        HttpServerErrorException serverError = HttpServerErrorException.create(
+            HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", HttpHeaders.EMPTY, new byte[0], null);
+
+        when(tokenRepository.findTopByOrderByExpiresAtDesc())
+            .thenReturn(Optional.of(validToken));
+
+        doReturn(uriSpec).when(fitbitRestClient).get();
+        doReturn(headersSpec).when(uriSpec).uri(anyString());
+        doReturn(headersSpec).when(headersSpec).header(anyString(), anyString());
+        doReturn(responseSpec).when(headersSpec).retrieve();
+        doThrow(serverError).doReturn(expectedResponse).when(responseSpec).body(Map.class);
+
+        // Act
+        Map<String, Object> result = fitbitApiClient.fetchData("/some/endpoint");
+
+        // Assert
+        assertThat(result).isEqualTo(expectedResponse);
+        verify(refreshService, never()).refreshToken();    // 500 should NOT trigger refresh
+        verify(responseSpec, times(2)).body(Map.class);     // initial + one retry
+    }
+
+    @Test
+    void fetchData_propagates_whenSecond5xxReceived() {
+        // Two consecutive 5xx errors must propagate, not infinitely recurse.
         HttpServerErrorException serverError = HttpServerErrorException.create(
             HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", HttpHeaders.EMPTY, new byte[0], null);
 
@@ -177,11 +202,10 @@ class FitbitApiClientTest {
         doReturn(responseSpec).when(headersSpec).retrieve();
         doThrow(serverError).when(responseSpec).body(Map.class);
 
-        // Act + Assert
         assertThatThrownBy(() -> fitbitApiClient.fetchData("/some/endpoint"))
             .isInstanceOf(HttpServerErrorException.class);
 
-        verify(refreshService, never()).refreshToken();    // 500 should NOT trigger refresh
-        verify(responseSpec, times(1)).body(Map.class);     // exactly one HTTP attempt, no retry
+        verify(refreshService, never()).refreshToken();
+        verify(responseSpec, times(2)).body(Map.class);     // exactly two attempts, no third
     }
 }

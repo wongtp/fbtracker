@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
 @Service
@@ -72,7 +73,16 @@ public class FitbitApiClient {
                 .orElseThrow(() -> new RuntimeException("No OAuth token after refresh"))
                 .getAccessToken();
             return doFetch(endpoint, newToken, false);
+        } catch (HttpServerErrorException e) {
+            if (!canRetry) throw e;
+            log.warn("Fitbit {} for {}; retrying once after 2s backoff", e.getStatusCode(), endpoint);
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(ie);
+            }
+            return doFetch(endpoint, accessToken, false);
         }
-
     }
 }
