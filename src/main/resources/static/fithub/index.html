@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fithub</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.4/dist/cal-heatmap.css">
+    <style>
+        :root {
+            --bg: #ffffff;
+            --fg: #1f2328;
+            --muted: #656d76;
+            --border: #d0d7de;
+            --card: #ffffff;
+            --accent: #2563eb;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 1000px; margin: 2rem auto; padding: 0 1rem;
+            color: var(--fg); background: var(--bg);
+        }
+        a { color: var(--accent); text-decoration: none; }
+        h1 { margin: 0; font-size: 1.6rem; display: flex; align-items: center; gap: 0.5rem; }
+        .logo { font-size: 1.7rem; }
+        .sub { color: var(--muted); margin: 0.25rem 0 1.75rem; }
+
+        .stats { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.75rem; }
+        .stat {
+            border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem 1rem;
+            flex: 1 1 150px; min-width: 140px;
+        }
+        .stat-top { display: flex; align-items: baseline; gap: 0.45rem; }
+        .stat-ic { font-size: 1.05rem; }
+        .stat .num { font-size: 1.4rem; font-weight: 700; line-height: 1.1; }
+        .stat .lbl { color: var(--muted); font-size: 0.8rem; margin-top: 0.2rem; }
+        .stat-sub { color: var(--muted); font-size: 0.74rem; margin-top: 0.1rem; }
+
+        .card {
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 1.1rem 1.25rem; margin-bottom: 1.5rem; background: var(--card);
+        }
+        .card h2 { margin: 0 0 0.2rem; font-size: 1.05rem; }
+        .card .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 1rem; }
+
+        .section-title { font-size: 1.15rem; margin: 0 0 0.9rem; font-weight: 600; }
+
+        .repo-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; }
+        .repo-name { font-size: 1rem; font-weight: 600; }
+        .repo-name .icon { margin-right: 0.4rem; }
+        .repo-stat { color: var(--muted); font-size: 0.85rem; }
+
+        .heatmap-scroll { overflow-x: auto; padding-bottom: 0.3rem; }
+
+        .legend { display: flex; align-items: center; gap: 0.35rem; color: var(--muted); font-size: 0.75rem; margin-top: 0.5rem; justify-content: flex-end; }
+        .legend .cell { width: 11px; height: 11px; border-radius: 2px; }
+
+        .feed-day { padding: 0.7rem 0; border-bottom: 1px solid #eaeef2; }
+        .feed-day:last-child { border-bottom: none; }
+        #feed-rest .feed-day:last-child { border-bottom: none; }
+        .feed-date { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem; }
+        .pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .pill { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.28rem 0.65rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; }
+        .pill-ic { font-size: 0.95rem; }
+        .show-more { margin-top: 0.9rem; background: #f6f8fa; color: var(--accent); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.95rem; font: inherit; font-size: 0.85rem; cursor: pointer; }
+        .show-more:hover { background: #eef1f4; }
+
+        .muted { color: var(--muted); }
+        .error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 0.7rem 0.9rem; border-radius: 6px; }
+        footer { color: var(--muted); font-size: 0.8rem; margin: 2rem 0 1rem; text-align: center; }
+
+        /* cal-heatmap tweaks for the GitHub look */
+        .ch-subdomain-bg { rx: 2; ry: 2; }
+        /* no-data day cells render in cal-heatmap's neutral gray (#ededed),
+           which stays distinct from the lightest data tint of each ramp. */
+    </style>
+</head>
+<body>
+    <h1><span class="logo">🏋️</span> Fithub</h1>
+    <div class="sub">Your fitness contribution graph — one commit a day keeps the doctor away.</div>
+
+    <div id="stats" class="stats"></div>
+
+    <div class="card">
+        <h2 id="primary-title">Activity</h2>
+        <div class="meta" id="primary-meta">Loading…</div>
+        <div class="heatmap-scroll"><div id="primary-cal"></div></div>
+        <div class="legend" id="primary-legend"></div>
+    </div>
+
+    <div class="section-title">Repositories</div>
+    <div id="repos"></div>
+
+    <div class="card">
+        <h2>Recent activity</h2>
+        <div class="meta">Latest commits across all categories.</div>
+        <div id="feed"><div class="muted">Loading…</div></div>
+    </div>
+
+    <footer>Powered by fbtracker · data from Fitbit via InfluxDB</footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.4/dist/cal-heatmap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.4/dist/plugins/Tooltip.min.js"></script>
+    <script>
+    (async function () {
+        // ---- category presentation config (icon, color ramp light->dark, pill tint) ----
+        // Ramps deliberately start at a visible light tint (NOT gray), so a low-but-present
+        // day reads differently from a no-data day (which stays neutral gray via CSS).
+        const PALETTES = {
+            green:  ['#d3f9d8', '#8ce99a', '#51cf66', '#2f9e44', '#1b7a32'],
+            orange: ['#ffe8cc', '#ffc078', '#ff922b', '#f76707', '#bf4000'],
+            blue:   ['#d0ebff', '#74c0fc', '#4dabf7', '#1c7ed6', '#1864ab'],
+            purple: ['#e5dbff', '#b197fc', '#845ef7', '#7048e8', '#5f3dc4'],
+            red:    ['#ffe3e3', '#ffa8a8', '#ff6b6b', '#f03e3e', '#c92a2a'],
+            teal:   ['#c3fae8', '#63e6be', '#20c997', '#0ca678', '#087f5b'],
+        };
+        const TINTS = {
+            green:  { bg: '#ebfbee', fg: '#2b8a3e' },
+            orange: { bg: '#fff4e6', fg: '#d9480f' },
+            blue:   { bg: '#e7f5ff', fg: '#1971c2' },
+            purple: { bg: '#f3f0ff', fg: '#5f3dc4' },
+            red:    { bg: '#fff5f5', fg: '#c92a2a' },
+            teal:   { bg: '#e6fcf5', fg: '#087f5b' },
+        };
+        const PRESENTATION = {
+            calories:  { icon: '🔥', palette: 'orange' },
+            steps:     { icon: '👟', palette: 'green'  },
+            distance:  { icon: '🧭', palette: 'teal'   },
+            sleep:     { icon: '😴', palette: 'purple' },
+            restingHr: { icon: '❤️', palette: 'red'    },
+            spo2:      { icon: '🫁', palette: 'blue'   },
+        };
+
+        // ---- value formatters by category key ----
+        const fmt = {
+            calories: v => `${Math.round(v).toLocaleString()} kcal`,
+            steps: v => `${Math.round(v).toLocaleString()} steps`,
+            distance: v => `${v.toFixed(2)} mi`,
+            sleep: v => { const h = Math.floor(v / 60), m = Math.round(v % 60); return `${h}h ${m}m`; },
+            restingHr: v => `${Math.round(v)} bpm`,
+            spo2: v => `${v.toFixed(0)}%`,
+        };
+        function fmtValue(key, v) { return (fmt[key] || (x => String(x)))(v); }
+
+        // ---- fetch data (public endpoint, no credentials) ----
+        let data;
+        try {
+            const res = await fetch('/api/fithub/data');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            data = await res.json();
+        } catch (err) {
+            document.getElementById('primary-meta').innerHTML =
+                `<div class="error">Failed to load data: ${escapeHtml(String(err))}</div>`;
+            document.getElementById('feed').innerHTML = '';
+            return;
+        }
+
+        const byKey = Object.fromEntries(data.categories.map(c => [c.key, c]));
+        const primary = byKey[data.primaryCategory] || data.categories[0];
+
+        // ---- compute quantile thresholds (4 thresholds -> 5 buckets) ----
+        function thresholds(days) {
+            const vals = Object.values(days).filter(v => v > 0).sort((a, b) => a - b);
+            if (!vals.length) return [1, 2, 3, 4];
+            const q = p => vals[Math.min(vals.length - 1, Math.floor(p * vals.length))];
+            // 4 thresholds -> 5 buckets, evenly spaced quantiles; strictly increasing
+            let t = [q(0.2), q(0.4), q(0.6), q(0.8)];
+            for (let i = 1; i < t.length; i++) if (t[i] <= t[i - 1]) t[i] = t[i - 1] + 1e-6;
+            return t;
+        }
+
+        // ---- summary stats strip ----
+        renderStats();
+
+        // ---- frame the heatmaps from the first month that actually has data ----
+        const allDates = data.categories.flatMap(c => Object.keys(c.days));
+        const minDate = allDates.length ? allDates.reduce((a, b) => (a < b ? a : b)) : data.start;
+        const md = new Date(minDate + 'T00:00:00');
+        const monthsStart = new Date(md.getFullYear(), md.getMonth(), 1);
+        const range = monthsBetween(monthsStart, new Date(data.end + 'T00:00:00')) + 1;
+
+        // ---- primary heatmap (the active-calories overview) ----
+        document.getElementById('primary-title').textContent =
+            `${primary.label} · ${Object.keys(primary.days).length} active days`;
+        document.getElementById('primary-meta').textContent =
+            `Daily ${primary.label.toLowerCase()} (${primary.unit}).`;
+
+        paintHeatmap('#primary-cal', primary, monthsStart, range, PALETTES[PRESENTATION[primary.key].palette]);
+        renderLegend('#primary-legend', PALETTES[PRESENTATION[primary.key].palette]);
+
+        // ---- per-category "repositories" (everything except the primary heatmap) ----
+        const reposEl = document.getElementById('repos');
+        data.categories.filter(cat => cat.key !== data.primaryCategory).forEach(cat => {
+            const pres = PRESENTATION[cat.key] || { icon: '📊', palette: 'green' };
+            const palette = PALETTES[pres.palette];
+            const card = document.createElement('div');
+            card.className = 'card';
+            const calId = `cal-${cat.key}`;
+            card.innerHTML = `
+                <div class="repo-head">
+                    <span class="repo-name"><span class="icon">${pres.icon}</span>${escapeHtml(cat.label)}</span>
+                    <span class="repo-stat">${escapeHtml(summaryStat(cat))}</span>
+                </div>
+                <div class="meta" style="margin:0.5rem 0 0.8rem;">${Object.keys(cat.days).length} days with data</div>
+                <div class="heatmap-scroll"><div id="${calId}"></div></div>
+            `;
+            reposEl.appendChild(card);
+            paintHeatmap('#' + calId, cat, monthsStart, range, palette);
+        });
+
+        // ---- recent activity feed (hand-rolled "commits") ----
+        renderFeed(data.categories);
+
+        // ===================== helpers =====================
+
+        function paintHeatmap(selector, cat, start, range, palette) {
+            const source = Object.entries(cat.days).map(([date, value]) => ({ date, value }));
+            try {
+                const cal = new CalHeatmap();
+                cal.paint({
+                    itemSelector: selector,
+                    domain: { type: 'month', gutter: 4, label: { text: 'MMM', textAlign: 'start', position: 'top' } },
+                    subDomain: { type: 'ghDay', radius: 2, width: 11, height: 11, gutter: 3 },
+                    date: { start: start },
+                    range: range,
+                    data: { source, type: 'json', x: 'date', y: 'value' },
+                    scale: { color: { type: 'threshold', range: palette, domain: thresholds(cat.days) } },
+                }, [[window.Tooltip, {
+                    text: (ts, value) =>
+                        `${new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}: ` +
+                        (value || value === 0 ? fmtValue(cat.key, value) : 'No data'),
+                }]]);
+            } catch (err) {
+                document.querySelector(selector).innerHTML =
+                    `<span class="muted">Heatmap unavailable (${escapeHtml(String(err))})</span>`;
+            }
+        }
+
+        function renderStats() {
+            // streaks from the primary (active-calories) category = days the device was worn
+            const { current, longest } = streaks(Object.keys(primary.days).sort());
+            const cards = [
+                { icon: '🔥', num: String(current), lbl: 'Current streak' },
+                { icon: '🏆', num: String(longest), lbl: 'Longest streak' },
+            ];
+            // avg + max for sleep / steps / distance, ignoring zero days (device not worn)
+            [['sleep', 'sleep'], ['steps', 'steps'], ['distance', 'distance']].forEach(([key, noun]) => {
+                const cat = byKey[key];
+                const s = cat ? metricStats(cat) : { avg: 0, max: 0, n: 0 };
+                cards.push({
+                    icon: PRESENTATION[key].icon,
+                    num: s.n ? statNum(key, s.avg) : '—',
+                    lbl: `Avg ${noun}`,
+                    sub: s.n ? `Max ${statNum(key, s.max)}` : '',
+                });
+            });
+            document.getElementById('stats').innerHTML = cards.map(c =>
+                `<div class="stat">
+                    <div class="stat-top"><span class="stat-ic">${c.icon}</span><span class="num">${escapeHtml(c.num)}</span></div>
+                    <div class="lbl">${escapeHtml(c.lbl)}</div>
+                    ${c.sub ? `<div class="stat-sub">${escapeHtml(c.sub)}</div>` : ''}
+                </div>`
+            ).join('');
+        }
+
+        function metricStats(cat) {
+            const vals = Object.values(cat.days).filter(v => v > 0);
+            if (!vals.length) return { avg: 0, max: 0, n: 0 };
+            return { avg: vals.reduce((a, b) => a + b, 0) / vals.length, max: Math.max(...vals), n: vals.length };
+        }
+
+        // compact stat-card number (label carries the unit, so keep these terse)
+        function statNum(key, v) {
+            if (key === 'sleep') return fmt.sleep(v);
+            if (key === 'steps') return Math.round(v).toLocaleString();
+            if (key === 'distance') return `${v.toFixed(1)} mi`;
+            return fmtValue(key, v);
+        }
+
+        function streaks(sortedDates) {
+            // dates: ISO strings, ascending. Streak = consecutive calendar days.
+            let longest = 0, run = 0, prev = null;
+            for (const d of sortedDates) {
+                if (prev && dayDiff(prev, d) === 1) run++;
+                else run = 1;
+                longest = Math.max(longest, run);
+                prev = d;
+            }
+            // current streak counts back from the most recent data day if it's today/yesterday
+            let current = 0;
+            if (sortedDates.length) {
+                const last = sortedDates[sortedDates.length - 1];
+                const fromToday = dayDiff(last, isoToday());
+                if (fromToday <= 1) {
+                    current = 1;
+                    for (let i = sortedDates.length - 1; i > 0; i--) {
+                        if (dayDiff(sortedDates[i - 1], sortedDates[i]) === 1) current++;
+                        else break;
+                    }
+                }
+            }
+            return { current, longest };
+        }
+
+        function summaryStat(cat) {
+            const vals = Object.values(cat.days);
+            if (!vals.length) return 'no data';
+            if (cat.aggregation === 'sum') {
+                const total = vals.reduce((s, v) => s + v, 0);
+                return `${fmtValue(cat.key, total)} total`;
+            }
+            const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+            return `${fmtValue(cat.key, avg)} avg`;
+        }
+
+        function renderFeed(categories) {
+            // collect each day's metrics (skipping zero/no-data values)
+            const byDate = {};
+            categories.forEach(cat => {
+                Object.entries(cat.days).forEach(([date, value]) => {
+                    if (value > 0) (byDate[date] ||= []).push({ key: cat.key, value });
+                });
+            });
+            const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+            if (!dates.length) {
+                document.getElementById('feed').innerHTML = '<div class="muted">No activity yet.</div>';
+                return;
+            }
+            const order = categories.map(c => c.key);
+            const dayHtml = date => {
+                const pills = byDate[date]
+                    .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
+                    .map(c => {
+                        const pres = PRESENTATION[c.key] || { icon: '📊', palette: 'green' };
+                        const tint = TINTS[pres.palette];
+                        return `<span class="pill" style="background:${tint.bg};color:${tint.fg}">` +
+                            `<span class="pill-ic">${pres.icon}</span>${escapeHtml(fmtValue(c.key, c.value))}</span>`;
+                    }).join('');
+                const label = new Date(date + 'T00:00:00').toLocaleDateString(undefined,
+                    { weekday: 'long', month: 'short', day: 'numeric' });
+                return `<div class="feed-day"><div class="feed-date">${label}</div><div class="pills">${pills}</div></div>`;
+            };
+
+            const INITIAL = 5;
+            const head = dates.slice(0, INITIAL).map(dayHtml).join('');
+            const rest = dates.slice(INITIAL).map(dayHtml).join('');
+            const feed = document.getElementById('feed');
+            feed.innerHTML = head + (rest
+                ? `<div id="feed-rest" hidden>${rest}</div>` +
+                  `<button id="show-more" class="show-more">Show ${dates.length - INITIAL} more days</button>`
+                : '');
+            const btn = document.getElementById('show-more');
+            if (btn) btn.addEventListener('click', () => {
+                document.getElementById('feed-rest').hidden = false;
+                btn.remove();
+            });
+        }
+
+        function renderLegend(selector, palette) {
+            const empty = '<span class="cell" style="background:#ededed"></span>';   // no-data swatch
+            const cells = palette.map(c => `<span class="cell" style="background:${c}"></span>`).join('');
+            document.querySelector(selector).innerHTML = `<span>Less</span>${empty}${cells}<span>More</span>`;
+        }
+
+        // ---- small date utils ----
+        function dayDiff(a, b) { return Math.round((Date.parse(b + 'T00:00:00') - Date.parse(a + 'T00:00:00')) / 86400000); }
+        function monthsBetween(a, b) { return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()); }
+        function isoToday() { return new Date().toISOString().slice(0, 10); }
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        }
+    })();
+    </script>
+</body>
+</html>

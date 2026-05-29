@@ -20,6 +20,9 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/fithub/**").permitAll()
+                .requestMatchers("/fithub", "/fithub/**").permitAll()
+                .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated()
             )
             .oauth2Login(oauth -> oauth
