@@ -37,6 +37,30 @@ public class BackfillService {
         return repo.save(job);
     }
 
+    /**
+     * Calories-only backfill (daily totals from Google). One dailyRollUp call per day; lighter than
+     * the full {@link #run} since it touches a single metric. Used for the calories migration where
+     * legacy per-minute calories are replaced with one daily total per day.
+     */
+    @Async
+    public void runCaloriesBackfill(LocalDate start, LocalDate end) {
+        log.info("Starting calories-only backfill {} to {}", start, end);
+        LocalDate date = start;
+        int days = 0;
+        try {
+            while (!date.isAfter(end)) {
+                syncService.syncCaloriesForDate(date);
+                days++;
+                Thread.sleep(REQUEST_PACING_MS);
+                date = date.plusDays(1);
+            }
+            log.info("Calories-only backfill complete: {} days ({} to {})", days, start, end);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Calories-only backfill interrupted at {}", date);
+        }
+    }
+
     @Async
     public void run(UUID jobId) {
         BackfillJob job = repo.findById(jobId)

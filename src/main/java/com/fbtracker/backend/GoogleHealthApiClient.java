@@ -244,8 +244,42 @@ public class GoogleHealthApiClient {
         log.info("Token refresh succeeded, new expiry: {}", token.getExpiresAt());
     }
 
-    // TODO(P3): dailyRollUp(dataType, date) for non-intraday types:
-    //   total-calories, daily-resting-heart-rate.
-    //   POST /users/me/dataTypes/{type}/dataPoints:dailyRollUp with a civil-time
-    //   range body { "range": { "start": {date,time}, "end": {date,time} }, "windowSizeDays": 1 }.
+    /**
+     * POST dailyRollUp for a daily-aggregate type (e.g. total-calories, which has no intraday) over a
+     * single local day. Returns the rollup points (one for windowSizeDays=1); each carries the typed
+     * aggregate object, e.g. {@code totalCalories.kcalSum}.
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> dailyRollUp(String dataType, LocalDate date) {
+        Map<String, Object> body = Map.of(
+            "range", Map.of("start", civilMidnight(date), "end", civilMidnight(date.plusDays(1))),
+            "windowSizeDays", 1);
+        Map<String, Object> resp = postRollUp(dataType, body, validAccessToken(), true);
+        List<Map<String, Object>> points = (List<Map<String, Object>>) resp.get("rollupDataPoints");
+        return points != null ? points : List.of();
+    }
+
+    private static Map<String, Object> civilMidnight(LocalDate d) {
+        return Map.of(
+            "date", Map.of("year", d.getYear(), "month", d.getMonthValue(), "day", d.getDayOfMonth()),
+            "time", Map.of("hours", 0, "minutes", 0));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> postRollUp(String dataType, Object body, String accessToken, boolean canRetry) {
+        try {
+            return googleHealthRestClient.post()
+                .uri(builder -> builder.path("/users/me/dataTypes/{dataType}/dataPoints:dailyRollUp").build(dataType))
+                .header("Authorization", "Bearer " + accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(Map.class);
+        } catch (HttpClientErrorException.Unauthorized e) {
+            if (!canRetry) throw e;
+            refreshTokenOrNotify();
+            return postRollUp(dataType, body, validAccessToken(), false);
+        }
+    }
 }

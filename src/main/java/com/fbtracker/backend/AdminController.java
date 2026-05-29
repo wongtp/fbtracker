@@ -59,6 +59,18 @@ public class AdminController {
         return ResponseEntity.ok(job);
     }
 
+    @PostMapping("/backfill-calories")
+    public ResponseEntity<?> backfillCalories(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end
+    ) {
+        if (end.isBefore(start)) {
+            return ResponseEntity.badRequest().body("end date must not be before start date");
+        }
+        backfillService.runCaloriesBackfill(start, end);
+        return ResponseEntity.ok("Calories-only backfill started for " + start + " to " + end);
+    }
+
     @GetMapping("/backfill")
     public List<BackfillJob> listBackfills() {
         return backfillRepo.findAllByOrderByCreatedAtDesc();

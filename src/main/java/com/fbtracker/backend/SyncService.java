@@ -39,6 +39,11 @@ public class SyncService {
         activityHelper("distance", date);
     }
 
+    /** Calories only — used by the calories-only backfill (daily totals from Google). */
+    public void syncCaloriesForDate(LocalDate date) {
+        activityHelper("calories", date);
+    }
+
     private void activityHelper(String activity, LocalDate date) {
         try {
             List<IntradayPoint> points = healthDataClient.fetchActivityIntraday(activity, date);

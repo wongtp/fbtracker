@@ -41,8 +41,8 @@ public class GoogleHealthDataClient implements HealthDataClient {
      */
     private static final double MIN_VALID_SPO2 = 50;
 
-    /** Google reports distance in millimeters; legacy distance_intraday was in km. */
-    private static final double MM_TO_KM = 1.0 / 1_000_000;
+    /** Google reports distance in millimeters; the dashboard + legacy series are in miles. */
+    private static final double MM_TO_MILES = 1.0 / 1_609_344;
 
     private final GoogleHealthApiClient apiClient;
     private final ZoneId zoneId;
@@ -59,17 +59,32 @@ public class GoogleHealthDataClient implements HealthDataClient {
             case "steps":
                 return intervalPoints("steps", "steps", "count", 1.0, date);
             case "distance":
-                // distance arrives in millimeters; scale to km to match the legacy series.
-                return intervalPoints("distance", "distance", "millimeters", MM_TO_KM, date);
+                // distance arrives in millimeters; scale to miles to match the dashboard + legacy series.
+                return intervalPoints("distance", "distance", "millimeters", MM_TO_MILES, date);
             case "calories":
-                // total-calories has NO intraday in the Google Health API (daily rollup only).
-                // See MIGRATION.md — the calories_intraday measurement can't be populated here.
-                log.warn("calories intraday is unavailable in the Google Health API; skipping");
-                return List.of();
+                // total-calories has no intraday; emit the daily rollup total as one point/day.
+                return caloriesDailyTotal(date);
             default:
                 log.warn("Unknown activity '{}' for Google Health API", activity);
                 return List.of();
         }
+    }
+
+    /**
+     * total-calories has no intraday data, so fetch the daily total via dailyRollUp and emit it as a
+     * single point at local midnight. The dashboard's calories category aggregates with SUM, so one
+     * daily point sums to the day's total — preserving the existing measurement and history.
+     */
+    @SuppressWarnings("unchecked")
+    private List<IntradayPoint> caloriesDailyTotal(LocalDate date) {
+        for (Map<String, Object> rollup : apiClient.dailyRollUp("total-calories", date)) {
+            var totalCalories = (Map<String, Object>) rollup.get("totalCalories");
+            if (totalCalories != null && totalCalories.get("kcalSum") != null) {
+                Instant timestamp = date.atStartOfDay(zoneId).toInstant();
+                return List.of(new IntradayPoint(timestamp, num(totalCalories.get("kcalSum"))));
+            }
+        }
+        return List.of();
     }
 
     @Override

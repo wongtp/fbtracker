@@ -68,8 +68,10 @@ POST https://health.googleapis.com/v4/users/me/dataTypes/{type}/dataPoints:daily
 ## ⚠️ Behavioral changes that affect our data model
 
 1. **Calories loses minute-level intraday.** `total-calories` only supports rollup/dailyRollUp.
-   The `calories_intraday` Influx measurement can no longer be populated at 1-min resolution —
-   either drop it or switch to a daily total. **Decision needed.**
+   RESOLVED: fetch the daily total via `dailyRollUp` and write it as **one point/day** to
+   `calories_intraday`/`count`; the dashboard aggregates that category with SUM, so the daily total
+   and historical continuity both hold. ⚠️ `total-calories` is *total* burn (incl. BMR) vs the old
+   "Active Calories" label — numbers will read higher; relabel or subtract a BMR baseline if needed.
 2. **Resting HR is a separate daily data type** (`daily-resting-heart-rate`) instead of being
    embedded in the heart response. The `heartrate.resting` write needs a second call.
 3. **Pagination**: a day of `heart-rate` is ~8,700 samples → must follow `nextPageToken`.
@@ -151,9 +153,8 @@ Mapping decisions (deviations from Fitbit flagged):
   "dataSource": {...} } ] }
 ```
 - inner key `distance`; value field **`millimeters`** (string), NOT `count`.
-- ⚠️ unit change: Fitbit gave distance in account units (km/mi); Google gives **mm**. We convert
-  mm→km (`MM_TO_KM = 1e-6`) so `distance_intraday` stays reasonable. Confirm whether the legacy
-  series was km or miles; if miles, change the scale.
+- ⚠️ unit change: Fitbit gave distance in account units; Google gives **mm**. The dashboard formats
+  distance as **miles** and the legacy series is miles, so we convert mm→miles (`MM_TO_MILES = 1/1609344`).
 
 ### daily-resting-heart-rate (verified 2026-05-29) — Daily type
 ```json
@@ -177,6 +178,17 @@ Mapping decisions (deviations from Fitbit flagged):
 - ⚠️ do NOT hand-encode the filter and pass a pre-built URI string to RestClient — it double-encodes
   (`>=` → `%253E%253D`), and Google then sees no comparators ("global restriction" at every token).
   Pass the raw filter via the URI builder `queryParam` so it's encoded exactly once.
+
+### total-calories dailyRollUp (verified 2026-05-29) — Daily aggregate (no intraday)
+`POST /users/me/dataTypes/total-calories/dataPoints:dailyRollUp` with body
+`{"range":{"start":{"date":{...},"time":{...}},"end":{...}},"windowSizeDays":1}`:
+```json
+{ "rollupDataPoints": [ {
+  "civilStartTime": {"date":{...}}, "civilEndTime": {"date":{...}},
+  "totalCalories": { "kcalSum": 2539.57 } } ] }
+```
+- envelope is `rollupDataPoints` (not `dataPoints`); value `totalCalories.kcalSum` (number).
+- written as a single point at local midnight → SUM-aggregated by the dashboard.
 
 ## Open questions (verify against GA API before finishing)
 
