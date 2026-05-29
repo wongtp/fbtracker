@@ -3,7 +3,6 @@ package com.fbtracker.backend;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
@@ -11,8 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class SyncServiceTest {
 
     @Mock
-    private FitbitApiClient fitbitApiClient;
+    private HealthDataClient healthDataClient;
 
     @Mock
     private InfluxWriteService influxWriteService;
@@ -33,29 +32,25 @@ class SyncServiceTest {
 
     @BeforeEach
     void setUp() {
-        syncService = new SyncService(fitbitApiClient, influxWriteService, "America/New_York");
+        syncService = new SyncService(healthDataClient, influxWriteService, "America/New_York");
     }
 
-    private Map<String, Object> intradayResponse(String metric) {
-        return Map.of(
-            "activities-" + metric + "-intraday", Map.of(
-                "dataset", List.of(
-                    Map.of("time", "12:00:00", "value", 100),
-                    Map.of("time", "12:01:00", "value", 200)
-                )
-            )
+    private List<IntradayPoint> intradayPoints() {
+        return List.of(
+            new IntradayPoint(Instant.parse("2026-05-29T16:00:00Z"), 100),
+            new IntradayPoint(Instant.parse("2026-05-29T16:01:00Z"), 200)
         );
     }
 
     @Test
     void syncActivities_continuesOtherMetrics_whenOneFails() {
         // Arrange — steps throws, calories + distance return valid data
-        when(fitbitApiClient.fetchData(contains("steps")))
+        when(healthDataClient.fetchActivityIntraday(eq("steps"), any(LocalDate.class)))
             .thenThrow(new RuntimeException("simulated steps failure"));
-        when(fitbitApiClient.fetchData(contains("calories")))
-            .thenReturn(intradayResponse("calories"));
-        when(fitbitApiClient.fetchData(contains("distance")))
-            .thenReturn(intradayResponse("distance"));
+        when(healthDataClient.fetchActivityIntraday(eq("calories"), any(LocalDate.class)))
+            .thenReturn(intradayPoints());
+        when(healthDataClient.fetchActivityIntraday(eq("distance"), any(LocalDate.class)))
+            .thenReturn(intradayPoints());
 
         // Act
         syncService.syncActivities();
