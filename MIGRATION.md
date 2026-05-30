@@ -190,6 +190,14 @@ Mapping decisions (deviations from Fitbit flagged):
 - envelope is `rollupDataPoints` (not `dataPoints`); value `totalCalories.kcalSum` (number).
 - written as a single point at local midnight → SUM-aggregated by the dashboard.
 
+### ⚠️ steps/distance: list endpoint double-counts (use dailyRollUp)
+The `list` endpoint returns intraday points from **multiple overlapping data sources** — e.g.
+`Charge 6` (watch) AND `MobileTrack` (phone) — at non-aligned minute intervals. Summing all of them
+~doubles the daily total (5/29: list-sum 10370 / 6747 vs Google app 4966). The Google Health app shows
+a *merged* total, which the API exposes via **`dailyRollUp`** (`steps.countSum`, `distance.millimetersSum`).
+RESOLVED: steps, distance, and calories all use `dailyRollUp` → one merged daily point/day (matches the app;
+dashboard SUM-aggregates). The `list`/intraday path is only used for heart-rate now (not dashboard-displayed).
+
 ## Open questions (verify against GA API before finishing)
 
 - [ ] Exact value field names per data type (e.g. heart-rate sample `bpm`, oxygen-saturation `percentage`, sleep stage minutes). Docs didn't enumerate all fields.

@@ -55,15 +55,17 @@ public class GoogleHealthDataClient implements HealthDataClient {
 
     @Override
     public List<IntradayPoint> fetchActivityIntraday(String activity, LocalDate date) {
+        // All three use the de-duplicated daily rollup. The list endpoint returns multiple overlapping
+        // data sources (e.g. Charge 6 + MobileTrack), so summing it double-counts; dailyRollUp is
+        // Google's merged total and matches what the Google Health app shows.
         switch (activity) {
             case "steps":
-                return intervalPoints("steps", "steps", "count", 1.0, date);
+                return dailyTotal("steps", "steps", "countSum", 1.0, date);
             case "distance":
-                // distance arrives in millimeters; scale to miles to match the dashboard + legacy series.
-                return intervalPoints("distance", "distance", "millimeters", MM_TO_MILES, date);
+                // millimetersSum scaled to miles to match the dashboard + legacy series.
+                return dailyTotal("distance", "distance", "millimetersSum", MM_TO_MILES, date);
             case "calories":
-                // total-calories has no intraday; emit the daily rollup total as one point/day.
-                return caloriesDailyTotal(date);
+                return dailyTotal("total-calories", "totalCalories", "kcalSum", 1.0, date);
             default:
                 log.warn("Unknown activity '{}' for Google Health API", activity);
                 return List.of();
@@ -71,17 +73,18 @@ public class GoogleHealthDataClient implements HealthDataClient {
     }
 
     /**
-     * total-calories has no intraday data, so fetch the daily total via dailyRollUp and emit it as a
-     * single point at local midnight. The dashboard's calories category aggregates with SUM, so one
-     * daily point sums to the day's total — preserving the existing measurement and history.
+     * Daily de-duplicated total for an activity metric via dailyRollUp, emitted as a single point at
+     * local midnight. Used for steps/distance/calories: the list endpoint returns multiple overlapping
+     * sources (Charge 6 + MobileTrack) that double-count when summed, whereas dailyRollUp is Google's
+     * merged total. The dashboard aggregates these categories with SUM, so one point/day = the total.
      */
     @SuppressWarnings("unchecked")
-    private List<IntradayPoint> caloriesDailyTotal(LocalDate date) {
-        for (Map<String, Object> rollup : apiClient.dailyRollUp("total-calories", date)) {
-            var totalCalories = (Map<String, Object>) rollup.get("totalCalories");
-            if (totalCalories != null && totalCalories.get("kcalSum") != null) {
+    private List<IntradayPoint> dailyTotal(String dataType, String innerKey, String valueField, double scale, LocalDate date) {
+        for (Map<String, Object> rollup : apiClient.dailyRollUp(dataType, date)) {
+            var typed = (Map<String, Object>) rollup.get(innerKey);
+            if (typed != null && typed.get(valueField) != null) {
                 Instant timestamp = date.atStartOfDay(zoneId).toInstant();
-                return List.of(new IntradayPoint(timestamp, num(totalCalories.get("kcalSum"))));
+                return List.of(new IntradayPoint(timestamp, num(typed.get(valueField)) * scale));
             }
         }
         return List.of();
@@ -212,12 +215,6 @@ public class GoogleHealthDataClient implements HealthDataClient {
     }
 
     // ---- parsing helpers ----
-
-    /** Interval-typed data points (e.g. steps): timestamp from {@code interval.startTime}. */
-    private List<IntradayPoint> intervalPoints(String dataType, String innerKey, String valueField,
-                                               double scale, LocalDate date) {
-        return parsePoints(dataType, innerKey, valueField, scale, TimeAxis.INTERVAL, date);
-    }
 
     /** Sample-typed data points (e.g. heart-rate): timestamp from {@code sampleTime.physicalTime}. */
     private List<IntradayPoint> samplePoints(String dataType, String innerKey, String valueField,
