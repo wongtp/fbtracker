@@ -61,6 +61,29 @@ public class BackfillService {
         }
     }
 
+    /**
+     * Steps + distance backfill (clean Google re-sync). Used to replace the contaminated intraday
+     * series after the old Fitbit per-minute data is deleted, so only Google's interval data remains.
+     */
+    @Async
+    public void runActivitiesBackfill(LocalDate start, LocalDate end) {
+        log.info("Starting steps+distance backfill {} to {}", start, end);
+        LocalDate date = start;
+        int days = 0;
+        try {
+            while (!date.isAfter(end)) {
+                syncService.syncStepsAndDistanceForDate(date);
+                days++;
+                Thread.sleep(REQUEST_PACING_MS);
+                date = date.plusDays(1);
+            }
+            log.info("Steps+distance backfill complete: {} days ({} to {})", days, start, end);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Steps+distance backfill interrupted at {}", date);
+        }
+    }
+
     @Async
     public void run(UUID jobId) {
         BackfillJob job = repo.findById(jobId)

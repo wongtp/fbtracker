@@ -44,6 +44,12 @@ public class SyncService {
         activityHelper("calories", date);
     }
 
+    /** Steps + distance only — used by the activities backfill (clean Google re-sync). */
+    public void syncStepsAndDistanceForDate(LocalDate date) {
+        activityHelper("steps", date);
+        activityHelper("distance", date);
+    }
+
     private void activityHelper(String activity, LocalDate date) {
         try {
             List<IntradayPoint> points = healthDataClient.fetchActivityIntraday(activity, date);
